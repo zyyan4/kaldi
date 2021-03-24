@@ -53,7 +53,7 @@ if [ $stage -le 2 ]; then
     exit 1
   fi
   echo "$0: aligning with the perturbed low-resolution data"
-  steps/align_fmllr.sh --stage 2 --nj $train_nj --cmd "$train_cmd" \
+  steps/align_fmllr.sh --stage 0 --nj $train_nj --cmd "$train_cmd" \
     data/${train_set}_sp data/lang $gmm_dir $ali_dir || exit 1
   echo -e "======Align all data END|current time : `date +%Y-%m-%d-%T`======"
 fi
@@ -164,7 +164,8 @@ fi
 if [ $stage -le 7 ]; then
   echo "$0: extracting iVectors for dev and test data"
   for part in $test_sets; do
-    steps/online/nnet2/extract_ivectors_online.sh --cmd "$train_cmd" --nj $train_nj \
+    nj=$(cat data/${part}_hires/spk2utt | wc -l)
+    steps/online/nnet2/extract_ivectors_online.sh --cmd "$train_cmd" --nj $nj \
       data/${part}_hires exp/nnet3${nnet3_affix}/extractor \
       exp/nnet3${nnet3_affix}/ivectors_${part}_hires || exit 1;
   done

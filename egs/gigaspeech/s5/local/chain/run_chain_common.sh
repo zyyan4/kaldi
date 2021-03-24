@@ -6,6 +6,10 @@
 set -e
 
 stage=11
+repeat_frames=false
+finetune=false
+frame_subsampling_factor=1
+init_model_dir=
 
 # input directory names. These options are actually compulsory, and they have
 # been named for convenience
@@ -67,16 +71,47 @@ if [ $stage -le 12 ]; then
 fi
 
 if [ $stage -le 13 ]; then
-  # Build a tree using our new topology. We know we have alignments for the
-  # speed-perturbed data (local/nnet3/run_ivector_common.sh made them), so use
-  # those.
-  if [ -f $tree_dir/final.mdl ]; then
-    echo "$0: $tree_dir/final.mdl already exists, refusing to overwrite it."
-    exit 1;
-  fi
-  steps/nnet3/chain/build_tree.sh --frame-subsampling-factor 3 \
-      --context-opts "--context-width=2 --central-position=1" \
+  if [ $finetune ]; then
+    if [ ! -d $tree_dir ]; then
+      mkdir -p $tree_dir
+    fi
+    if [ -f $tree_dir/final.mdl ]; then
+      echo "$0: $tree_dir/final.mdl already exists, refusing to overwrite it."
+      exit 1;
+    fi
+
+    for f in $init_model_dir/{final.mdl,tree,phones.txt}; do
+      [ ! -f $f ] && echo "convert ali from finetune model, but no such file $f" && exit 1;
+      # copy frome init_model_dir
+      cp $f $tree_dir/
+    done
+  
+    if [ -f $init_model_dir/frame_subsampling_factor ]; then
+      frame_subsampling_factor=$(cat $init_model_dir/frame_subsampling_factor)
+    fi
+    # Convert the alignments to the new tree.  Note: we likely will not use these
+    # converted alignments in the chain system directly, but they could be useful
+    # for other purposes.
+    echo "$0: Converting alignments from $alidir to use ${init_model_dir} tree"
+    nj=$(cat $ali_dir/num_jobs) || exit 1;
+    echo $nj >$tree_dir/num_jobs
+    $train_cmd JOB=1:$nj $tree_dir/log/convert.JOB.log \
+      convert-ali --repeat-frames=$repeat_frames \
+        --frame-subsampling-factor=$frame_subsampling_factor \
+        $ali_dir/final.mdl $tree_dir/final.mdl $tree_dir/tree \
+        "ark:gunzip -c $ali_dir/ali.JOB.gz|" "ark:|gzip -c >$tree_dir/ali.JOB.gz" || exit 1;
+  else
+    # Build a tree using our new topology. We know we have alignments for the
+    # speed-perturbed data (local/nnet3/run_ivector_common.sh made them), so use
+    # those.
+    if [ -f $tree_dir/final.mdl ]; then
+      echo "$0: $tree_dir/final.mdl already exists, refusing to overwrite it."
+      exit 1;
+    fi
+    steps/nnet3/chain/build_tree.sh --frame-subsampling-factor 3 \
+        --context-opts "--context-width=2 --central-position=1" \
       --cmd "$train_cmd" $num_leaves ${lores_train_data_dir} $lang $ali_dir $tree_dir
+  fi
 fi
 
 exit 0;
